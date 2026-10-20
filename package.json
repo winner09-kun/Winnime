@@ -1,0 +1,30 @@
+{
+  "name": "kaze",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "vue-tsc -b && vite build",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "axios": "^1.8.0",
+    "hls.js": "^1.6.0",
+    "lucide-vue-next": "^0.468.0",
+    "pinia": "^3.0.0",
+    "tailwindcss": "^4.1.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@vitejs/plugin-vue": "^6.0.0",
+    "prettier": "^3.9.10",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.0",
+    "vitest": "^5.0.5",
+    "vue-tsc": "^3.0.0"
+  }
+}
