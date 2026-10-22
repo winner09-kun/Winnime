@@ -16,6 +16,7 @@ import { useLibrary, statuses } from "../stores/library";
 import type { Anime, Episode, Source, WatchStatus } from "../types";
 import AnimeSection from "../components/AnimeSection.vue";
 import LoadState from "../components/LoadState.vue";
+import EpisodeFilter from "../components/EpisodeFilter.vue";
 const route = useRoute(),
   library = useLibrary(),
   anime = ref<Anime>(),
@@ -24,6 +25,7 @@ const route = useRoute(),
   loading = ref(true),
   error = ref(""),
   episodeError = ref(""),
+  episodeNote = ref(""),
   episodeLoading = ref(false),
   episodePage = ref(1),
   hasNext = ref(false),
@@ -46,6 +48,7 @@ async function load() {
 async function loadEpisodes(more = false) {
   episodeLoading.value = true;
   episodeError.value = "";
+  episodeNote.value = "";
   try {
     const page = more ? episodePage.value + 1 : 1;
     const { data } = await api.get("/anime/" + route.params.id + "/episodes", {
@@ -61,6 +64,7 @@ async function loadEpisodes(more = false) {
       : data.items;
     episodePage.value = page;
     hasNext.value = data.has_next;
+    episodeNote.value = data.note || (data.stale ? "Menampilkan daftar episode tersimpan karena penyedia sedang tidak merespons." : "");
   } catch (e) {
     episodeError.value = errorMessage(e);
     if (!more)
@@ -236,25 +240,29 @@ onMounted(load);
               Episode dimuat dari penyedia video. Ketersediaan pemutaran mengikuti server.
             </p>
           </div>
-          <span class="muted">{{ episodeLoading ? 'Memuat episode…' : episodes.length + ' episode ditemukan' }}</span>
+          <span class="muted">{{ episodeLoading ? 'Memuat episode…' : episodeError && !episodes.length ? 'Daftar episode belum dapat dimuat' : episodes.length + ' episode ditemukan' }}</span>
         </div>
         <p v-if="episodeLoading" role="status">Sedang mencari daftar episode dan sumber video…</p>
         <p v-if="episodeError" class="notice">
           {{ episodeError }} <button @click="loadEpisodes()">Coba lagi</button>
         </p>
+        <p v-else-if="episodeNote" class="notice">{{ episodeNote }}</p>
         <div
-          v-if="!episodes.length && !episodeLoading"
+          v-if="!episodes.length && !episodeLoading && !episodeError"
           class="empty-state compact"
         >
           <LockKeyhole />
           <h3>Metadata episode belum tersedia</h3>
           <p>
-            Tambahkan sumber video berizin melalui
-            <RouterLink to="/settings">Pengaturan</RouterLink>.
+            Penyedia belum mengembalikan daftar episode untuk judul ini.
           </p>
         </div>
+        <p v-if="!episodes.length && !episodeLoading">
+          <RouterLink class="button secondary" :to="{ path: '/streaming', query: { q: anime.titles.find(t => /^[\x00-\x7F]+$/.test(t)) || anime.title } }">Cari episode di Wajik</RouterLink>
+        </p>
+        <EpisodeFilter v-if="episodes.length" v-slot="{ items }" :items="episodes" availability :has-more="hasNext" :completed-numbers="library.history.filter(h => h.anime_id === anime?.id && h.completed).map(h => h.episode)">
         <div class="episode-list">
-          <article v-for="e in episodes" :key="e.number" class="episode-row">
+          <article v-for="e in items" :key="e.number" class="episode-row">
             <span class="episode-number">{{
               String(e.number).padStart(2, "0")
             }}</span>
@@ -283,6 +291,7 @@ onMounted(load);
             ><LockKeyhole v-else class="muted" :size="17" />
           </article>
         </div>
+        </EpisodeFilter>
         <button
           v-if="hasNext"
           class="button secondary load-more"

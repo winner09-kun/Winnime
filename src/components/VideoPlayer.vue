@@ -17,6 +17,36 @@ const video = ref<HTMLVideoElement>(),
   rate = ref(1),
   qualities = ref<{ height: number; index: number }[]>([]),
   quality = ref(-1);
+const subtitleOptions = ref<{ index: number; label: string }[]>([]);
+const selectedSubtitle = ref(-1);
+let subtitleChosen = false;
+function refreshSubtitles() {
+  const tracks = video.value?.textTracks;
+  if (!tracks) return;
+  subtitleOptions.value = Array.from(tracks)
+    .map((track, index) => ({ track, index }))
+    .filter(({ track }) => track.kind === 'subtitles' || track.kind === 'captions')
+    .map(({ track, index }) => ({ index, label: track.label || track.language || `Subtitle ${index + 1}` }));
+  if (!subtitleChosen) {
+    const preferred = Array.from(tracks).findIndex((track) =>
+      ['subtitles', 'captions'].includes(track.kind) &&
+      /^(id|ind|in)(-|$)/i.test(track.language));
+    if (preferred >= 0) {
+      selectedSubtitle.value = preferred;
+      applySubtitle();
+    }
+  }
+}
+function applySubtitle() {
+  Array.from(video.value?.textTracks || []).forEach((track, index) => {
+    if (track.kind === 'subtitles' || track.kind === 'captions')
+      track.mode = index === selectedSubtitle.value ? 'showing' : 'disabled';
+  });
+}
+function changeSubtitle() {
+  subtitleChosen = true;
+  applySubtitle();
+}
 let hls: Hls | undefined,
   yt: any,
   timer: ReturnType<typeof setInterval> | undefined,
@@ -40,6 +70,7 @@ function timeupdate() {
   }
 }
 function metadata() {
+  refreshSubtitles();
   if (video.value && props.resume > 0)
     video.value.currentTime = Math.min(
       props.resume,
@@ -117,6 +148,8 @@ onMounted(async () => {
           start: Math.floor(props.resume),
           origin: window.location.origin,
           playsinline: 1,
+          cc_lang_pref: 'id',
+          cc_load_policy: 1,
         },
         events: {
           onReady: () => {
@@ -143,6 +176,8 @@ onMounted(async () => {
       );
     }
   } else if (video.value) {
+    video.value.textTracks.addEventListener('addtrack', refreshSubtitles);
+    refreshSubtitles();
     if (props.source.provider === "hls" && Hls.isSupported()) {
       hls = new Hls();
       hls.loadSource(props.source.url);
@@ -168,6 +203,7 @@ function visibilitySave() {
   if (document.hidden) save();
 }
 onBeforeUnmount(() => {
+  video.value?.textTracks.removeEventListener('addtrack', refreshSubtitles);
   save();
   disposed = true;
   clearInterval(timer);
@@ -186,7 +222,7 @@ onBeforeUnmount(() => {
       <!-- Zen hosts such as HD-1 reject sandboxed frames. Embed URLs are
            restricted to the Zen player origin by the backend. -->
       <div class="video-frame"><iframe :src="source.url" title="Zen episode player" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen></iframe></div>
-      <p class="muted">Player Zen. Bahasa subtitle mengikuti server; progres otomatis belum didukung.</p>
+      <p class="muted">Subtitle Zen diatur melalui menu CC pada player jika tersedia. Label SUB tidak selalu berarti subtitle Indonesia. Progres otomatis belum didukung.</p>
     </template>
     <div v-else-if="source.provider === 'cloudflare'" class="video-frame">
       <iframe
@@ -233,9 +269,16 @@ onBeforeUnmount(() => {
           :src="s.url"
           :srclang="s.language"
           :label="s.label"
+          @load="refreshSubtitles"
         />
       </video>
       <div class="player-options">
+        <label v-if="subtitleOptions.length">Subtitle
+          <select v-model="selectedSubtitle" aria-label="Bahasa subtitle" @change="changeSubtitle">
+            <option :value="-1">Nonaktif</option>
+            <option v-for="track in subtitleOptions" :key="track.index" :value="track.index">{{ track.label }}</option>
+          </select>
+        </label>
         <label
           >Kecepatan<select v-model="rate" @change="speed">
             <option

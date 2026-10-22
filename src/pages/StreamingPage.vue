@@ -3,12 +3,14 @@ import { ref, onMounted, onBeforeUnmount } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { api, errorMessage } from '../services/api';
 import LoadState from '../components/LoadState.vue';
+import EpisodeFilter from '../components/EpisodeFilter.vue';
 type EpisodeLink = { title: string; episodeId: string };
 type AnimeCard = { title: string; animeId: string; poster?: string; status?: string };
 type Detail = { title: string; poster?: string; synopsis?: { paragraphList: string[] }; episodeList?: EpisodeLink[] };
-type Episode = { title: string; animeId: string; defaultStreamingUrl?: string; prevEpisode?: EpisodeLink; nextEpisode?: EpisodeLink; info?: { episodeList: EpisodeLink[] }; server?: { qualityList: { title: string; serverList: { title: string; serverId: string }[] }[] } };
+type Episode = { title: string; animeId: string; sourceUrl?: string; defaultStreamingUrl?: string; prevEpisode?: EpisodeLink; nextEpisode?: EpisodeLink; info?: { episodeList: EpisodeLink[] }; server?: { qualityList: { title: string; serverList: { title: string; serverId: string; provider?: 'otakudesu' }[] }[] } };
 const route = useRoute(), router = useRouter();
 const term = ref(String(route.query.q || '')), loading = ref(false), error = ref('');
+const providerNote = ref('');
 const results = ref<AnimeCard[]>([]), detail = ref<Detail>(), episode = ref<Episode>();
 const stream = ref(''), serverError = ref(''), serverLoading = ref(false), selectedServer = ref('');
 const controller = new AbortController();
@@ -24,13 +26,23 @@ function safeEmbed(value?: string) {
 async function load() {
   loading.value = true;
   error.value = '';
+  providerNote.value = '';
+  ++serverRequest;
+  selectedServer.value = '';
+  serverError.value = '';
+  serverLoading.value = false;
+  stream.value = '';
   try {
     if (route.params.episodeId) {
-      episode.value = (await api.get('/wajik/episode/' + encodeURIComponent(String(route.params.episodeId)), { signal: controller.signal })).data.data;
+      const response = await api.get('/wajik/episode/' + encodeURIComponent(String(route.params.episodeId)), { signal: controller.signal });
+      episode.value = response.data.data;
+      providerNote.value = response.data.note || '';
       stream.value = safeEmbed(episode.value?.defaultStreamingUrl);
       if (!stream.value) serverError.value = 'Sumber utama tidak tersedia. Pilih server lain jika ada.';
     } else if (route.params.animeId) {
-      detail.value = (await api.get('/wajik/anime/' + encodeURIComponent(String(route.params.animeId)), { signal: controller.signal })).data.data;
+      const response = await api.get('/wajik/anime/' + encodeURIComponent(String(route.params.animeId)), { signal: controller.signal });
+      detail.value = response.data.data;
+      providerNote.value = response.data.note || '';
     } else if (term.value.trim()) {
       results.value = (await api.get('/wajik/search', { params: { q: term.value.trim() }, signal: controller.signal })).data.data.animeList || [];
     }
@@ -49,8 +61,13 @@ async function changeServer() {
   serverError.value = '';
   serverLoading.value = true;
   try {
+    const server = episode.value?.server?.qualityList.flatMap(q => q.serverList)
+      .find(s => s.serverId === selectedServer.value);
+    const endpoint = server?.provider === 'otakudesu'
+      ? '/wajik/episode/' + encodeURIComponent(String(route.params.episodeId)) + '/mirror/' + encodeURIComponent(selectedServer.value)
+      : '/wajik/server/' + encodeURIComponent(selectedServer.value);
     const value = selectedServer.value
-      ? (await api.get('/wajik/server/' + encodeURIComponent(selectedServer.value), { signal: controller.signal })).data.data.url
+      ? (await api.get(endpoint, { signal: controller.signal })).data.data.url
       : episode.value?.defaultStreamingUrl;
     if (ticket !== serverRequest) return;
     stream.value = safeEmbed(value);
@@ -72,6 +89,8 @@ onBeforeUnmount(() => controller.abort());
       <button class="button" :disabled="loading">Cari</button>
     </form>
     <LoadState :loading="loading" :error="error" @retry="load" />
+    <p v-if="!loading && !error && providerNote" class="notice" role="status">{{ providerNote }}</p>
+    <RouterLink v-if="!loading && error" :to="{ path: '/streaming', query: { q: term } }" class="button secondary">Kembali ke pencarian</RouterLink>
     <template v-if="!loading && !error">
       <section v-if="episode">
         <RouterLink :to="'/streaming/anime/' + episode.animeId" class="back-link">← Daftar episode</RouterLink>
@@ -90,14 +109,17 @@ onBeforeUnmount(() => controller.abort());
         <div v-if="stream" class="video-frame">
           <iframe :key="stream" :src="stream" :title="episode.title" sandbox="allow-scripts allow-same-origin allow-presentation" allow="autoplay; fullscreen; picture-in-picture; encrypted-media" allowfullscreen></iframe>
         </div>
-        <p v-if="stream" class="muted">Jika player menolak akses atau tidak memuat video, pilih server lain. Ketersediaan mengikuti penyedia.</p>
+        <p v-if="stream" class="muted">Jika player menolak koneksi, pilih server lain jika tersedia atau buka halaman sumber untuk memilih mirror.</p>
+        <a v-if="safeEmbed(episode.sourceUrl)" :href="safeEmbed(episode.sourceUrl)" target="_blank" rel="noopener noreferrer" class="button secondary">Buka episode di sumber · Pilih mirror</a>
         <div class="watch-toolbar">
           <RouterLink v-if="episode.prevEpisode" :to="'/streaming/episode/' + episode.prevEpisode.episodeId" class="button secondary">← Sebelumnya</RouterLink>
           <RouterLink v-if="episode.nextEpisode" :to="'/streaming/episode/' + episode.nextEpisode.episodeId" class="button">Berikutnya →</RouterLink>
         </div>
-        <div class="episode-list">
-          <RouterLink v-for="e in episode.info?.episodeList || []" :key="e.episodeId" :to="'/streaming/episode/' + e.episodeId" class="episode-row" :aria-current="e.episodeId === route.params.episodeId ? 'page' : undefined">{{ e.title }}</RouterLink>
-        </div>
+        <EpisodeFilter v-slot="{ items }" :items="episode.info?.episodeList || []">
+          <div class="episode-list">
+            <RouterLink v-for="e in items" :key="e.episodeId" :to="'/streaming/episode/' + e.episodeId" class="episode-row" :aria-current="e.episodeId === route.params.episodeId ? 'page' : undefined">{{ e.title }}</RouterLink>
+          </div>
+        </EpisodeFilter>
       </section>
       <section v-else-if="detail">
         <RouterLink :to="{ path: '/streaming', query: { q: term } }" class="back-link">← Pencarian Wajik</RouterLink>
@@ -105,9 +127,11 @@ onBeforeUnmount(() => controller.abort());
         <p v-for="(paragraph, i) in detail.synopsis?.paragraphList || []" :key="i">{{ paragraph }}</p>
         <div class="section-heading"><h2>Daftar episode</h2><span>{{ detail.episodeList?.length || 0 }} episode</span></div>
         <p v-if="!detail.episodeList?.length" class="notice">Penyedia belum mengembalikan daftar episode untuk judul ini.</p>
-        <div class="episode-list">
-          <RouterLink v-for="e in detail.episodeList || []" :key="e.episodeId" :to="'/streaming/episode/' + e.episodeId" class="episode-row">{{ e.title }} <span class="text-link">Tonton →</span></RouterLink>
-        </div>
+        <EpisodeFilter v-slot="{ items }" :items="detail.episodeList || []">
+          <div class="episode-list">
+            <RouterLink v-for="e in items" :key="e.episodeId" :to="'/streaming/episode/' + e.episodeId" class="episode-row">{{ e.title }} <span class="text-link">Tonton →</span></RouterLink>
+          </div>
+        </EpisodeFilter>
       </section>
       <template v-else>
         <p v-if="term && !results.length" class="notice">Tidak ada hasil. Coba judul Jepang atau kata pencarian lain.</p>

@@ -3,6 +3,7 @@ import re
 import httpx
 from fastapi import APIRouter, HTTPException, Query
 from .core.config import config
+from .services import otakudesu
 
 router = APIRouter(prefix='/api/wajik', tags=['Wajik'])
 
@@ -33,4 +34,16 @@ async def search(q: str = Query(min_length=1, max_length=150)):
 async def item(kind: str, item_id: str):
     if kind not in ('anime', 'episode', 'server') or not re.fullmatch(r'[A-Za-z0-9_=-]{1,500}', item_id):
         raise HTTPException(422, 'ID sumber Wajik tidak valid.')
-    return await request(kind + '/' + item_id)
+    try:
+        return await request(kind + '/' + item_id)
+    except HTTPException as original:
+        if kind in ('anime', 'episode') and original.status_code in (403, 502):
+            try:
+                return await otakudesu.fetch(kind, item_id)
+            except HTTPException:
+                pass
+        raise original
+
+@router.get('/episode/{episode_id}/mirror/{server_id}')
+async def direct_mirror(episode_id: str, server_id: str):
+    return await otakudesu.fetch_mirror(episode_id, server_id)

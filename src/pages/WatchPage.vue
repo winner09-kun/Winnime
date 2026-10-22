@@ -13,6 +13,7 @@ import { useLibrary } from "../stores/library";
 import type { Anime, Source, Episode } from "../types";
 import VideoPlayer from "../components/VideoPlayer.vue";
 import LoadState from "../components/LoadState.vue";
+import EpisodeFilter from "../components/EpisodeFilter.vue";
 const route = useRoute(),
   router = useRouter(),
   library = useLibrary(),
@@ -178,6 +179,7 @@ onMounted(load);
             /></RouterLink>
           </div>
           <div class="watch-title">
+            <RouterLink :to="{ path: '/streaming', query: { q: anime.titles.find((title) => title !== anime?.title) || anime.title } }" class="button secondary small">Cari sumber sub Indo</RouterLink>
             <div class="eyebrow">EPISODE {{ episode }}</div>
             <h1>{{ anime.title }}</h1>
             <p>{{ episodes.find((e) => e.number === episode)?.title }}</p>
@@ -202,8 +204,9 @@ onMounted(load);
           <p v-if="!episodes.length" class="muted">
             Metadata episode belum tersedia.
           </p>
+          <EpisodeFilter v-slot="{ items }" :items="episodes" availability :completed-numbers="library.history.filter(h => h.anime_id === animeId && h.completed).map(h => h.episode)">
           <div
-            v-for="e in episodes"
+            v-for="e in items"
             :key="e.number"
             :class="['watch-episode', { current: e.number === episode }]"
           >
@@ -225,6 +228,7 @@ onMounted(load);
               <LockKeyhole :size="14" />
             </div>
           </div>
+          </EpisodeFilter>
           <RouterLink :to="'/anime/' + animeId" class="text-link"
             >Semua episode <ArrowRight :size="14"
           /></RouterLink>

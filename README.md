@@ -1,6 +1,6 @@
-# KAZE
+# WINNIME
 
-Aplikasi anime pribadi berbasis **Vue 3 + TypeScript + Vite + Tailwind CSS + Pinia + Vue Router**, dengan **FastAPI, SQLAlchemy, SQLite**. Tampilan mengambil referensi struktur layanan streaming seperti Crunchyroll, dengan identitas KAZE sendiri. Tidak memerlukan akun atau pembayaran.
+Aplikasi anime pribadi bernama **WINNIME**, berbasis **Vue 3 + TypeScript + Vite + Tailwind CSS + Pinia + Vue Router**, dengan **FastAPI, SQLAlchemy, SQLite**. Menyediakan katalog anime, jadwal tayang, watchlist, riwayat menonton, dan pemutar video dalam satu aplikasi. Tidak memerlukan akun atau pembayaran.
 
 ## Menjalankan lokal
 
@@ -57,8 +57,10 @@ Jikan memberikan metadata episode dengan **`idMal` yang dikirim AniList**, bukan
 2. Buka **Pengaturan → Sumber video**.
 3. Masukkan ID anime, nomor episode, provider, dan sumber yang diizinkan.
 4. Untuk YouTube, masukkan **video ID 11 karakter** dari kanal resmi yang mengizinkan embedding.
-5. Untuk MP4/HLS, gunakan URL HTTPS atau server lokal `http://127.0.0.1:PORT/...`. File lokal harus disajikan oleh server media dengan CORS yang mengizinkan origin KAZE. URL `file://` tidak didukung browser.
+5. Untuk MP4/HLS, gunakan URL HTTPS atau server lokal `http://127.0.0.1:PORT/...`. File lokal harus disajikan oleh server media dengan CORS yang mengizinkan origin WINNIME. URL `file://` tidak didukung browser.
 6. Subtitle opsional berupa WebVTT, dengan URL, bahasa, dan label. Server subtitle juga perlu CORS.
+
+Player MP4/HLS menampilkan pilihan subtitle yang tersedia dan memilih bahasa Indonesia (`id`, `ind`, atau `in`) secara otomatis. Pilihan Nonaktif mematikan subtitle. Untuk menambahkan subtitle sendiri, isi URL WebVTT pada Pengaturan → Sumber video dengan bahasa `id` dan label `Indonesia`. YouTube menerima preferensi caption Indonesia, tetapi ketersediaannya tetap mengikuti video. Subtitle iframe Zen tidak dapat ditambahkan atau diterjemahkan oleh WINNIME; gunakan menu CC penyedia bila tersedia. Tombol Cari sumber sub Indo membuka pencarian Wajik untuk memilih judul dan season yang sesuai, tanpa menjamin ketersediaan provider.
 
 Manifest `backend/official_sources.json` menyediakan tautan kanal resmi: Frieren episode 1 dan Cells at Work! episode 1–8 (dubbing Indonesia). Impor semua sekaligus dengan `.\.venv\Scripts\python.exe -m backend.import_official_sources`. Importer aman diulang dan tidak menambah duplikat. Ini daftar tautan terpilih, bukan sinkronisasi otomatis seluruh katalog atau seluruh musim. Tambahkan rekaman pada manifest untuk mengimpor sumber lain sekaligus.
 
@@ -77,6 +79,12 @@ Halaman detail dan player utama sekarang juga memakai Zen (`https://api.anizen.t
 Menu **Nonton** membuka pencarian Wajik (sumber Otakudesu). Pada detail AniList, **Cari episode di Wajik** membawa judul ke pencarian; pilih season secara eksplisit agar ID AniList tidak tertukar dengan ID provider. Halaman detail memuat seluruh `episodeList` dari respons, lalu halaman episode menampilkan embed, pilihan server, serta navigasi sebelumnya/berikutnya.
 
 Backend mengakses JSON dari `KAZE_WAJIK_BASE_URL` (default `https://wajik-anime-api.vercel.app`). Tidak ada proxy video, pengunduhan, atau bypass akses. Iframe HTTPS dibatasi sandbox tanpa popup dan navigasi halaman induk. Riwayat/progres otomatis dan auto-next belum didukung pada iframe Wajik. Sumber ini pihak ketiga, tidak ditandai sebagai penyedia resmi. Ketersediaannya mengikuti API dan host video.
+
+Jika API Wajik gagal dengan 403/502 saat membuka detail atau episode, backend mencoba halaman publik `https://otakudesu.blog` sebagai cadangan. Parser hanya mengambil judul, tautan episode, navigasi, dan iframe Desustream pada bagian player; skrip dan iklan halaman tidak disalin. Respons menandai asal cadangan di UI. Pencarian masih memakai Wajik. Saat halaman episode memakai cadangan Otakudesu, daftar mirror dan kualitas dibaca dari halaman tersebut. Pilihan mirror dikirim melalui backend ke AJAX Otakudesu: backend memverifikasi pilihan terhadap episode terkini, mengambil nonce baru, lalu mengambil URL iframe. Skrip sumber tidak dijalankan atau disalin ke aplikasi. Jika format handler berubah atau penyedia menolak akses, aplikasi menampilkan error dan tetap menawarkan server lain. Jika halaman publik juga menolak akses, error tetap ditampilkan. Uji langsung Frieren season 2 berhasil memuat 10 episode dan URL player episode 1; ini tidak menjamin semua server video aktif.
+
+Pembungkus Desustream membatasi domain melalui `frame-ancestors`. Jika halaman publiknya memuat iframe Blogger, backend mengambil URL embed Blogger tersebut secara terbatas ke `https://www.blogger.com/video.g?token=...`, lalu memuatnya langsung di player WINNIME. Tidak ada proxy video atau penghapusan header keamanan. Sandbox iframe tetap aktif. Jika tidak ditemukan player Blogger, alamat sumber awal tetap digunakan.
+
+Pengujian browser 21 Oktober 2026: Frieren Season 2 episode 1 berhasil diputar di dalam WINNIME melalui Blogger, dengan durasi 24 menit dan waktu pemutaran yang berjalan. Subtitle Indonesia terlihat pada adegan menit 7:12. Hasil ini bukan jaminan bahwa seluruh episode/provider bisa diputar. Halaman sumber tetap tersedia sebagai alternatif.
 
 Verifikasi langsung: pencarian Frieren berhasil; detail `sousou-frieren-sub-indo` mengembalikan 403 dari provider. Karena itu daftar episode aktual dan playback belum terverifikasi. UI menampilkan kegagalan tersebut, bukan menandai pemutaran berhasil. Jangan menganggap semua judul/episode pasti dapat diputar.
 
@@ -117,3 +125,6 @@ backend/tests/      Tes API dan metadata
 ```
 
 Koneksi internet diperlukan untuk metadata, artwork, font eksternal, dan video hosted. Metadata yang pernah dimuat tetap tersedia saat penyedia gagal; artwork tidak dicache oleh backend.
+
+
+Verifikasi 22 Oktober 2026: halaman episode kmt-s2-episode-3-sub-indo mengembalikan 10 pilihan mirror dalam kualitas 360p, 480p, dan 720p. Permintaan nonce dan embed untuk blogs 480p berhasil mengembalikan URL Blogger. Pengujian ini memverifikasi resolusi URL, bukan playback atau subtitle pada seluruh mirror.

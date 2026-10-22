@@ -19,6 +19,8 @@ def test_search_preserves_provider_ids(monkeypatch):
 
 @pytest.mark.parametrize('http_status,body_status', [(403, 403), (200, 403), (429, 429), (500, 500)])
 def test_provider_failure_is_not_reported_as_success(monkeypatch, http_status, body_status):
+    async def unavailable(*args): raise HTTPException(502, 'Source offline')
+    monkeypatch.setattr(wajik.otakudesu, 'fetch', unavailable)
     calls = []
     def respond(request):
         calls.append(request)
@@ -28,6 +30,14 @@ def test_provider_failure_is_not_reported_as_success(monkeypatch, http_status, b
         asyncio.run(wajik.item('anime', 'valid-id'))
     assert error.value.status_code == (403 if body_status == 403 else 429 if http_status == 429 else 502)
     assert len(calls) == 1
+
+def test_detail_falls_back_to_public_page(monkeypatch):
+    mock_upstream(monkeypatch, lambda request: httpx.Response(403))
+    async def public(kind, ident):
+        assert (kind, ident) == ('anime', 'valid-id')
+        return {'data': {'episodeList': [{'episodeId': 'ep-1'}]}, 'provider': 'Otakudesu'}
+    monkeypatch.setattr(wajik.otakudesu, 'fetch', public)
+    assert asyncio.run(wajik.item('anime', 'valid-id'))['provider'] == 'Otakudesu'
 
 @pytest.mark.parametrize('kind,item_id', [('video', 'x'), ('anime', '..'), ('episode', 'https://example.com'), ('server', 'a/b')])
 def test_untrusted_paths_are_rejected(kind, item_id):

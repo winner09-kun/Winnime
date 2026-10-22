@@ -80,7 +80,7 @@ def test_episode_metadata_uses_verified_mal_id(client,monkeypatch):
     async def request(url):
         called.append(url)
         return {'data':[{'mal_id':1,'title':'Real episode title','aired':None}], 'pagination':{'has_next_page':False}}
-    async def uncached(key,fetch): return await fetch()
+    async def uncached(key,fetch, **kwargs): return await fetch()
     monkeypatch.setattr(metadata,'detail',detail)
     monkeypatch.setattr(metadata,'request',request)
     monkeypatch.setattr(metadata,'cached',uncached)
@@ -113,6 +113,27 @@ def test_configured_video_remains_playable_when_episode_provider_fails(client,mo
     assert result.status_code==200
     assert result.json()['items']==[{'number':1,'title':None,'playable':True,'configured':True}]
     assert client.get('/api/anime/2/episodes').status_code==503
+
+def test_slow_provider_returns_stale_cache_within_deadline(monkeypatch):
+    from backend.app.services import metadata
+    engine = create_engine('sqlite://', poolclass=StaticPool)
+    Base.metadata.create_all(engine)
+    monkeypatch.setattr(metadata, 'Session', sessionmaker(engine))
+    monkeypatch.setattr(metadata.config, 'cache_ttl', -1)
+    async def fresh(): return {'items': [{'number': 1}]}
+    async def slow(): await asyncio.sleep(60)
+    async def run():
+        await metadata.cached('slow-episodes', fresh)
+        result = await asyncio.wait_for(
+            metadata.cached('slow-episodes', slow, fetch_timeout=0.01), timeout=1)
+        assert result['stale'] is True
+        assert result['items'] == [{'number': 1}]
+        from fastapi import HTTPException
+        with pytest.raises(HTTPException) as exc:
+            await metadata.cached('uncached-episodes', slow, fetch_timeout=0.01)
+        assert exc.value.status_code == 503
+    asyncio.run(run())
+    engine.dispose()
 
 def test_provider_list_preserves_extra_configured_episodes(client, monkeypatch):
     from backend.app.services import zen

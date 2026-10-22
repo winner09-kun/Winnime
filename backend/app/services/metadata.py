@@ -44,7 +44,7 @@ async def request(url, payload=None):
                     raise
                 await asyncio.sleep(0.7 * (2 ** attempt))
 
-async def cached(key, fetch):
+async def cached(key, fetch, *, fetch_timeout=None):
     key = hashlib.sha256(key.encode()).hexdigest()
     lock = locks.setdefault(key, asyncio.Lock())
     async with lock:
@@ -54,7 +54,9 @@ async def cached(key, fetch):
             if row and time.time() - row.updated_at < config.cache_ttl:
                 return {**row.data, 'cached': True}
         try:
-            data = await fetch()
+            # Time out inside the cache boundary so stale data survives a slow
+            # provider instead of being discarded by the route's outer timeout.
+            data = await asyncio.wait_for(fetch(), timeout=fetch_timeout)
             with Session() as db:
                 db.merge(Cache(key=key, data=data, updated_at=time.time()))
                 db.commit()
@@ -128,7 +130,7 @@ async def detail(anime_id):
             return {'anime':Anime(**fallback).model_dump(), 'provider':'jikan'}
         if not m: raise HTTPException(404, 'Anime tidak ditemukan')
         return {'anime':normalize(m).model_dump()}
-    return await cached('detail:'+str(anime_id), fetch)
+    return await cached('detail:'+str(anime_id), fetch, fetch_timeout=8)
 
 async def episodes(anime_id, page=1):
     anime = (await detail(anime_id))['anime']
@@ -142,4 +144,4 @@ async def episodes(anime_id, page=1):
                 return {'items': [], 'has_next': False, 'note': 'Metadata episode belum tersedia di Jikan.'}
             raise
         return {'items':[{'number':e['mal_id'], 'title':e.get('title'), 'aired':e.get('aired'), 'filler':e.get('filler',False)} for e in data['data']], 'has_next':data.get('pagination',{}).get('has_next_page',False)}
-    return await cached(f'episodes:{anime_id}:{page}', fetch)
+    return await cached(f'episodes:{anime_id}:{page}', fetch, fetch_timeout=8)
